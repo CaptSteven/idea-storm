@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head><meta charset="UTF-8"><title>退款处理台</title></head>
+  <body>
+    <main>
+      <h1>退款处理台</h1>
+      <label>订单密码 <input id="orderPassword" type="password" autocomplete="current-password"></label>
+      <button id="openOrder" type="button">打开订单</button>
+      <p id="result" aria-live="polite"></p>
+    </main>
+    <script>
+      document.querySelector("#openOrder").addEventListener("click", () => {
+        document.querySelector("#result").textContent = "订单已打开";
+        history.pushState({}, "", "/tests/fixtures/recording.html?order=42#details");
+      });
+    </script>
+  </body>
+</html>

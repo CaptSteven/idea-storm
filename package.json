@@ -1,10 +1,23 @@
 {
   "name": "sopflow",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
+    "start": "node scripts/serve-demo.js",
     "ai-server": "node server.js",
-    "ai-server:mock": "AI_MOCK=true node server.js"
+    "ai-server:mock": "AI_MOCK=true node server.js",
+    "test": "node --test tests/*.test.js",
+    "test:e2e": "node tests/extension.e2e.js",
+    "test:demo": "node tests/demo.e2e.js",
+    "assets:generate": "node scripts/generate-sample-assets.js",
+    "check": "node scripts/check.js && npm test",
+    "package": "node scripts/package-extension.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.61.1"
   }
 }
