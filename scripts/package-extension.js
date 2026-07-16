@@ -1,8 +1,9 @@
 import { mkdir, readdir, rm } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
-const root = resolve(new URL("../", import.meta.url).pathname);
+const root = resolve(fileURLToPath(new URL("../", import.meta.url)));
 const extensionDir = join(root, "extension");
 const distDir = join(root, "dist");
 const archive = join(distDir, "sopflow-extension.zip");

@@ -1,8 +1,9 @@
 import http from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const root = resolve(new URL("../", import.meta.url).pathname);
+const root = resolve(fileURLToPath(new URL("../", import.meta.url)));
 const port = Number(process.env.DEMO_PORT || process.env.PORT || 4173);
 const host = process.env.DEMO_HOST || "127.0.0.1";
 const contentTypes = {
@@ -37,7 +38,7 @@ export function createDemoServer() {
   });
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === resolve(new URL(import.meta.url).pathname)) {
+if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
   const server = createDemoServer();
   server.listen(port, host, () => console.log(`SOPFlow demo available at http://${host}:${port}`));
 }

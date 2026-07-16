@@ -1,8 +1,9 @@
 import { readdir } from "node:fs/promises";
 import { extname, join, relative } from "node:path";
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
-const root = new URL("../", import.meta.url);
+const root = fileURLToPath(new URL("../", import.meta.url));
 const ignored = new Set([".git", "dist", "node_modules", "playwright-report", "test-results"]);
 const files = [];
 
@@ -15,7 +16,7 @@ async function collect(directory) {
   }
 }
 
-await collect(root.pathname);
+await collect(root);
 for (const file of files.sort()) {
   const result = spawnSync(process.execPath, ["--check", file], { stdio: "inherit" });
   if (result.status !== 0) process.exit(result.status || 1);

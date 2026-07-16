@@ -2,11 +2,12 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { createDemoServer } from "../scripts/serve-demo.js";
 import { createSopServer } from "../server.js";
 
-const root = resolve(new URL("../", import.meta.url).pathname);
+const root = resolve(fileURLToPath(new URL("../", import.meta.url)));
 const extensionPath = join(root, "extension");
 const resultsDir = join(root, "test-results");
 await mkdir(resultsDir, { recursive: true });
