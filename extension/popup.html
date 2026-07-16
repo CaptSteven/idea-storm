@@ -25,13 +25,25 @@
         <button id="startButton" class="primary" type="button">开始记录</button>
         <button id="stopButton" class="danger" type="button" disabled>停止并生成</button>
         <button id="openButton" type="button" disabled>打开 SOP</button>
+        <button id="historyButton" type="button">历史记录</button>
       </div>
 
+      <section class="settings" aria-label="录制设置">
+        <label>
+          <input id="screenshotsEnabled" type="checkbox" checked />
+          <span>记录步骤截图</span>
+        </label>
+        <label>
+          <input id="autoRedact" type="checkbox" checked />
+          <span>自动模糊敏感输入区域</span>
+        </label>
+      </section>
+
       <p class="hint">
-        记录期间会捕获点击、输入和页面截图。不要在含敏感信息的页面开启。
+        文本输入默认不保存原值，URL 会移除查询参数。截图脱敏仍需人工复核。
       </p>
     </main>
 
-    <script src="popup.js"></script>
+    <script type="module" src="popup.js"></script>
   </body>
 </html>

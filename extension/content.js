@@ -1,50 +1,46 @@
 (() => {
-  if (window.__sopflowRecorderInjected) {
-    return;
-  }
+  if (window.__sopflowRecorderInjected) return;
   window.__sopflowRecorderInjected = true;
 
   const state = {
     recording: false,
-    sessionId: null,
-    startedAt: null,
-    steps: [],
-    lastInputValueByElement: new WeakMap(),
-    lastUrl: location.href,
+    session: null,
+    settings: { ...SOPFlowShared.DEFAULT_SETTINGS },
+    lastInputStateByElement: new WeakMap(),
+    inputTimers: new WeakMap(),
+    lastUrl: SOPFlowShared.sanitizeUrl(location.href),
+    saveChain: Promise.resolve(),
   };
 
   const formatTime = (milliseconds) => {
     const total = Math.max(0, Math.floor(milliseconds / 1000));
-    const mins = String(Math.floor(total / 60)).padStart(2, "0");
-    const secs = String(total % 60).padStart(2, "0");
-    return `${mins}:${secs}`;
+    return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
   };
 
-  const createId = () => crypto.randomUUID();
-
-  const elapsed = () => (state.startedAt ? Date.now() - state.startedAt : 0);
+  const elapsed = () => {
+    const startedAt = new Date(state.session?.startedAt || Date.now()).getTime();
+    return Date.now() - startedAt;
+  };
 
   const getElementName = (element) => {
     if (!element) return "页面";
-
-    const aria = element.getAttribute("aria-label");
-    const title = element.getAttribute("title");
-    const placeholder = element.getAttribute("placeholder");
-    const alt = element.getAttribute("alt");
-    const text = element.innerText || element.textContent;
-    const value = element.value && element.tagName === "BUTTON" ? element.value : "";
-
-    return [aria, title, placeholder, alt, text, value]
-      .map((item) => String(item || "").replace(/\s+/g, " ").trim())
-      .find(Boolean)
-      ?.slice(0, 80) || element.tagName.toLowerCase();
+    const text = [
+      element.getAttribute?.("aria-label"),
+      element.getAttribute?.("title"),
+      element.getAttribute?.("placeholder"),
+      element.getAttribute?.("alt"),
+      element.innerText,
+      element.textContent,
+    ]
+      .map((item) => SOPFlowShared.cleanText(item, 80))
+      .find(Boolean);
+    return text || element.tagName?.toLowerCase?.() || "页面";
   };
 
   const getCssPath = (element) => {
     if (!element || element.nodeType !== Node.ELEMENT_NODE) return "";
     const parts = [];
     let current = element;
-
     while (current && current.nodeType === Node.ELEMENT_NODE && parts.length < 5) {
       let selector = current.tagName.toLowerCase();
       if (current.id) {
@@ -52,222 +48,234 @@
         parts.unshift(selector);
         break;
       }
-
-      const className = Array.from(current.classList || [])
+      const classes = Array.from(current.classList || [])
+        .filter((name) => !name.startsWith("sopflow-"))
         .slice(0, 2)
         .map((name) => `.${CSS.escape(name)}`)
         .join("");
-      selector += className;
+      selector += classes;
       parts.unshift(selector);
       current = current.parentElement;
     }
-
     return parts.join(" > ");
   };
 
-  const describeClick = (element) => {
-    const name = getElementName(element);
-    const role = element.getAttribute("role") || element.tagName.toLowerCase();
-    return {
-      title: `点击 ${name}`,
-      description: `在当前页面点击“${name}”控件。控件类型：${role}。`,
-      check: "页面进入预期状态，或对应操作反馈已出现。",
-    };
+  const getSensitiveRects = () => {
+    const rects = [];
+    document.querySelectorAll("input,textarea,select,[contenteditable='true']").forEach((element) => {
+      if (!SOPFlowShared.isSensitiveElement(element)) return;
+      const rect = element.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0 || rect.bottom < 0 || rect.top > innerHeight) return;
+      rects.push({
+        x: Math.max(0, rect.x - 6),
+        y: Math.max(0, rect.y - 6),
+        width: Math.min(innerWidth, rect.width + 12),
+        height: Math.min(innerHeight, rect.height + 12),
+      });
+    });
+    return rects;
   };
 
-  const describeInput = (element) => {
-    const name = getElementName(element);
-    const type = element.getAttribute("type") || element.tagName.toLowerCase();
-    const value = type === "password" ? "••••••" : String(element.value || "").slice(0, 80);
-    return {
-      title: `填写 ${name}`,
-      description: `在“${name}”字段输入或选择：${value || "空值"}。`,
-      check: "字段内容已保留，格式符合业务要求。",
-    };
-  };
-
-  const showBadge = () => {
+  const showBadge = (message = "") => {
     let badge = document.querySelector("#sopflow-recorder-badge");
     if (!badge) {
       badge = document.createElement("div");
       badge.id = "sopflow-recorder-badge";
       badge.style.cssText = [
-        "position:fixed",
-        "z-index:2147483647",
-        "right:16px",
-        "bottom:16px",
-        "padding:10px 12px",
-        "border-radius:8px",
-        "background:#17211f",
-        "color:#fff",
-        "font:600 13px system-ui,sans-serif",
-        "box-shadow:0 10px 30px rgba(0,0,0,.2)",
+        "position:fixed", "z-index:2147483647", "right:16px", "bottom:16px",
+        "padding:10px 12px", "border-radius:8px", "background:#17211f", "color:#fff",
+        "font:600 13px system-ui,sans-serif", "box-shadow:0 10px 30px rgba(0,0,0,.2)",
       ].join(";");
       document.documentElement.appendChild(badge);
     }
-
-    badge.textContent = `SOPFlow 记录中 · ${state.steps.length} 步`;
+    badge.textContent = message || `SOPFlow 记录中 · ${state.session?.steps?.length || 0} 步`;
   };
 
-  const hideBadge = () => {
-    document.querySelector("#sopflow-recorder-badge")?.remove();
+  const hideBadge = () => document.querySelector("#sopflow-recorder-badge")?.remove();
+
+  const saveSession = async () => {
+    if (!state.session) return;
+    state.session.sourceUrl = SOPFlowShared.sanitizeUrl(location.href);
+    state.session.sourceHost = SOPFlowShared.hostnameFromUrl(state.session.sourceUrl);
+    const snapshot = structuredClone(state.session);
+    state.saveChain = state.saveChain.catch(() => {}).then(async () => {
+      const response = await chrome.runtime.sendMessage({ type: "SOPFLOW_SAVE_SESSION", session: snapshot });
+      if (!response?.ok) throw new Error(response?.error || "保存记录失败。");
+      if (state.session?.id === response.session?.id) {
+        state.session.updatedAt = response.session.updatedAt;
+      }
+      return response.session;
+    });
+    return state.saveChain;
   };
 
-  const captureScreenshot = () =>
-    chrome.runtime.sendMessage({ type: "SOPFLOW_CAPTURE_SCREENSHOT" });
+  const captureStepScreenshot = async (stepId) => {
+    if (!state.settings.screenshotsEnabled || !state.session) return;
+    await new Promise((resolve) => setTimeout(resolve, 260));
+    const response = await chrome.runtime.sendMessage({
+      type: "SOPFLOW_CAPTURE_SCREENSHOT",
+      sessionId: state.session.id,
+      stepId,
+      sensitiveRects: getSensitiveRects(),
+      viewportWidth: innerWidth,
+      viewportHeight: innerHeight,
+    });
+    const step = state.session?.steps.find((item) => item.id === stepId);
+    if (!step) return;
+    if (!response?.ok) {
+      step.screenshotError = response?.error || "截图失败";
+    } else {
+      step.screenshotId = response.screenshotId || null;
+      step.screenshotError = "";
+    }
+    await saveSession();
+  };
 
-  const saveSession = () => {
-    if (!state.sessionId) {
-      return Promise.resolve({ ok: false, error: "No active session." });
+  const addStep = async (kind, element, descriptor, { screenshot = true } = {}) => {
+    if (!state.recording || !state.session) return;
+    if (state.session.steps.length >= SOPFlowShared.MAX_STEPS) {
+      showBadge(`SOPFlow 已达到 ${SOPFlowShared.MAX_STEPS} 步上限`);
+      return;
     }
 
-    const session = {
-      id: state.sessionId,
-      title: document.title ? `${document.title} 操作 SOP` : "网页操作 SOP",
-      url: location.href,
-      startedAt: new Date(state.startedAt || Date.now()).toISOString(),
-      endedAt: state.recording ? null : new Date().toISOString(),
-      steps: state.steps,
-    };
-
-    return chrome.runtime.sendMessage({ type: "SOPFLOW_SAVE_SESSION", session });
-  };
-
-  const addStep = async (kind, element, descriptor) => {
-    if (!state.recording) return;
-
-    const step = {
-      id: createId(),
+    const step = SOPFlowShared.normalizeStep({
+      id: SOPFlowShared.createId(),
       kind,
       time: formatTime(elapsed()),
       url: location.href,
       selector: getCssPath(element),
       target: getElementName(element),
-      image: "",
-      screenshotError: "",
       ...descriptor,
-    };
-
-    state.steps.push(step);
+    }, state.session.steps.length);
+    state.session.steps.push(step);
+    state.session.aiSop = null;
     showBadge();
     await saveSession();
-
-    captureScreenshot()
-      .then(async (screenshot) => {
-        if (!screenshot?.ok) {
-          step.screenshotError = screenshot?.error || "截图失败";
-        } else {
-          step.image = screenshot.dataUrl;
-          step.screenshotError = "";
-        }
-        await saveSession();
-      })
-      .catch(async (error) => {
-        step.screenshotError = error.message || "截图失败";
-        await saveSession();
+    if (screenshot) {
+      captureStepScreenshot(step.id).catch(async (error) => {
+        const currentStep = state.session?.steps.find((item) => item.id === step.id);
+        if (!currentStep) return;
+        currentStep.screenshotError = error.message || "截图失败";
+        try { await saveSession(); } catch { /* Page may be unloading. */ }
       });
+    }
+  };
+
+  const describeClick = (element) => {
+    const name = getElementName(element);
+    const role = element.getAttribute?.("role") || element.tagName?.toLowerCase?.() || "控件";
+    return {
+      title: `点击 ${name}`,
+      description: `点击“${name}”控件（${role}）。`,
+      check: "确认页面出现预期反馈或进入下一状态。",
+    };
+  };
+
+  const describeInput = (element) => {
+    const name = getElementName(element);
+    const value = SOPFlowShared.describeInputValue(element);
+    return {
+      title: `${element.tagName === "SELECT" ? "选择" : "填写"} ${name}`,
+      description: `在“${name}”字段执行输入或选择：${value}。`,
+      check: "确认字段状态已保存且格式符合业务要求。",
+    };
   };
 
   const onClick = (event) => {
-    const element = event.target?.closest?.("button,a,input,textarea,select,[role='button'],[contenteditable='true'],label");
+    const element = event.target?.closest?.(
+      "button,a,input[type='button'],input[type='submit'],[role='button'],label",
+    );
     if (!element || element.id === "sopflow-recorder-badge") return;
-
-    addStep("click", element, describeClick(element));
+    void addStep("click", element, describeClick(element));
   };
 
-  const onChange = (event) => {
+  const onInputChanged = (event) => {
     const element = event.target;
     if (!element?.matches?.("input,textarea,select,[contenteditable='true']")) return;
+    const type = element.getAttribute?.("type")?.toLowerCase?.() || "";
+    const currentState = type === "checkbox" || type === "radio"
+      ? `checked:${Boolean(element.checked)}`
+      : element.tagName === "SELECT"
+        ? `selected:${element.selectedIndex}`
+        : "changed";
+    if (state.lastInputStateByElement.get(element) === currentState && event.type !== "blur") return;
+    state.lastInputStateByElement.set(element, currentState);
+    clearTimeout(state.inputTimers.get(element));
+    state.inputTimers.set(element, setTimeout(() => {
+      void addStep("input", element, describeInput(element));
+    }, 420));
+  };
 
-    const nextValue = element.isContentEditable ? element.textContent : element.value;
-    const previousValue = state.lastInputValueByElement.get(element);
-    if (previousValue === nextValue) return;
-    state.lastInputValueByElement.set(element, nextValue);
+  const onSubmit = (event) => {
+    const form = event.target;
+    void addStep("submit", form, {
+      title: "提交当前表单",
+      description: `提交“${getElementName(form)}”中的当前信息。`,
+      check: "确认系统没有重复提交，并显示成功或下一步状态。",
+    });
+  };
 
-    window.setTimeout(() => {
-      addStep("input", element, describeInput(element));
-    }, 120);
+  const recordNavigationIfNeeded = () => {
+    const nextUrl = SOPFlowShared.sanitizeUrl(location.href);
+    if (!state.recording || state.lastUrl === nextUrl) return;
+    const previous = state.lastUrl;
+    state.lastUrl = nextUrl;
+    void addStep("navigation", document.body, {
+      title: "进入新页面",
+      description: `页面从 ${previous || "上一页面"} 进入 ${nextUrl}。`,
+      check: "确认新页面加载完成后继续操作。",
+    });
+  };
+
+  const patchHistory = () => {
+    for (const method of ["pushState", "replaceState"]) {
+      const original = history[method];
+      history[method] = function patchedHistory(...args) {
+        const result = original.apply(this, args);
+        setTimeout(recordNavigationIfNeeded, 0);
+        return result;
+      };
+    }
+    addEventListener("popstate", () => setTimeout(recordNavigationIfNeeded, 0));
   };
 
   const start = async () => {
-    if (state.recording) {
-      return getStatus();
-    }
-
+    if (state.recording) return getStatus();
+    const now = new Date().toISOString();
     state.recording = true;
-    state.sessionId = createId();
-    state.startedAt = Date.now();
-    state.steps = [];
+    state.lastUrl = SOPFlowShared.sanitizeUrl(location.href);
+    state.session = SOPFlowShared.normalizeSession({
+      id: SOPFlowShared.createId(),
+      status: "recording",
+      title: document.title ? `${document.title} 操作 SOP` : "网页操作 SOP",
+      sourceUrl: location.href,
+      startedAt: now,
+      createdAt: now,
+      steps: [],
+    });
     showBadge();
     await addStep("start", document.body, {
       title: "开始记录流程",
-      description: `打开页面：${document.title || location.href}`,
+      description: `打开页面：${document.title || state.session.sourceUrl}`,
       check: "确认当前页面是流程起点。",
     });
     return getStatus();
   };
 
   const resume = (session) => {
-    if (!session || session.endedAt) {
-      return getStatus();
-    }
-
+    if (!session || session.status !== "recording") return getStatus();
     state.recording = true;
-    state.sessionId = session.id;
-    state.startedAt = new Date(session.startedAt || Date.now()).getTime();
-    state.steps = Array.isArray(session.steps) ? session.steps : [];
-    state.lastUrl = location.href;
+    state.session = SOPFlowShared.normalizeSession(session);
+    state.lastUrl = SOPFlowShared.sanitizeUrl(location.href);
     showBadge();
     return getStatus();
   };
 
-  const recordNavigationIfNeeded = () => {
-    if (!state.recording || state.lastUrl === location.href) return;
-
-    const fromUrl = state.lastUrl;
-    state.lastUrl = location.href;
-    addStep("navigation", document.body, {
-      title: "进入新页面",
-      description: `页面从 ${fromUrl} 跳转到 ${location.href}。`,
-      check: "确认新页面已加载，并继续执行下一步操作。",
-    });
-  };
-
-  const patchHistory = () => {
-    const originalPushState = history.pushState;
-    const originalReplaceState = history.replaceState;
-
-    history.pushState = function pushState(...args) {
-      const result = originalPushState.apply(this, args);
-      window.setTimeout(recordNavigationIfNeeded, 0);
-      return result;
-    };
-
-    history.replaceState = function replaceState(...args) {
-      const result = originalReplaceState.apply(this, args);
-      window.setTimeout(recordNavigationIfNeeded, 0);
-      return result;
-    };
-
-    window.addEventListener("popstate", () => {
-      window.setTimeout(recordNavigationIfNeeded, 0);
-    });
-  };
-
-  const restoreActiveSession = async () => {
-    try {
-      const response = await chrome.runtime.sendMessage({ type: "SOPFLOW_CONTENT_READY" });
-      if (response?.ok && response.session && !response.session.endedAt) {
-        resume(response.session);
-        recordNavigationIfNeeded();
-      }
-    } catch {
-      // The extension runtime can be unavailable on browser-managed pages.
-    }
-  };
-
   const stop = async () => {
+    if (!state.session) return getStatus();
     state.recording = false;
+    state.session.status = "complete";
+    state.session.endedAt = new Date().toISOString();
     hideBadge();
     await saveSession();
     return getStatus();
@@ -275,39 +283,55 @@
 
   const getStatus = () => ({
     recording: state.recording,
-    sessionId: state.sessionId,
-    stepCount: state.steps.length,
+    sessionId: state.session?.id || null,
+    stepCount: state.session?.steps?.length || 0,
     title: document.title,
-    url: location.href,
+    url: SOPFlowShared.sanitizeUrl(location.href),
   });
 
+  const restoreActiveSession = async () => {
+    try {
+      const settingsResponse = await chrome.runtime.sendMessage({ type: "SOPFLOW_GET_SETTINGS" });
+      if (settingsResponse?.ok) state.settings = settingsResponse.settings;
+      const response = await chrome.runtime.sendMessage({ type: "SOPFLOW_CONTENT_READY" });
+      if (response?.ok && response.session) {
+        resume(response.session);
+        recordNavigationIfNeeded();
+      }
+    } catch {
+      // Extension runtime is unavailable on browser-managed pages.
+    }
+  };
+
   document.addEventListener("click", onClick, true);
-  document.addEventListener("change", onChange, true);
-  document.addEventListener("blur", onChange, true);
+  document.addEventListener("change", onInputChanged, true);
+  document.addEventListener("blur", onInputChanged, true);
+  document.addEventListener("submit", onSubmit, true);
   patchHistory();
-  restoreActiveSession();
+  void restoreActiveSession();
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message.type === "SOPFLOW_START") {
       start().then(sendResponse);
       return true;
     }
-
     if (message.type === "SOPFLOW_STOP") {
       stop().then(sendResponse);
       return true;
     }
-
     if (message.type === "SOPFLOW_STATUS") {
       sendResponse(getStatus());
       return false;
     }
-
     if (message.type === "SOPFLOW_RESUME") {
       sendResponse(resume(message.session));
       return false;
     }
-
+    if (message.type === "SOPFLOW_SETTINGS_UPDATED") {
+      state.settings = { ...state.settings, ...message.settings };
+      sendResponse({ ok: true });
+      return false;
+    }
     return false;
   });
 })();

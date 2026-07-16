@@ -3,76 +3,108 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>SOPFlow 文档</title>
+    <title>SOPFlow 工作台</title>
     <link rel="stylesheet" href="dashboard.css" />
   </head>
   <body>
-    <main class="page">
-      <header class="topbar">
-        <div>
-          <p class="eyebrow">SOPFlow Document</p>
-          <h1 id="documentTitle">加载 SOP...</h1>
-        </div>
-        <div class="actions">
-          <button id="aiButton" class="primary" type="button">AI 优化 SOP</button>
-          <button id="copyMarkdown" type="button">复制 Markdown</button>
-          <button id="downloadHtml" type="button">导出 HTML</button>
-          <button id="downloadJson" type="button">导出 JSON</button>
-        </div>
-      </header>
-
-      <section class="meta-grid">
-        <label>
-          SOP 标题
-          <input id="titleInput" type="text" />
-        </label>
-        <label>
-          适用对象
-          <input id="audienceInput" type="text" value="新员工、运营人员、外包执行团队" />
-        </label>
-        <label>
-          版本
-          <input id="versionInput" type="text" value="v0.1" />
-        </label>
-        <label class="wide-field">
-          AI 后端地址
-          <input id="backendUrlInput" type="url" value="http://127.0.0.1:8787" />
-        </label>
-      </section>
-
-      <div id="aiStatus" class="ai-status" hidden></div>
-
-      <section class="layout">
-        <aside class="steps-panel">
-          <div class="panel-header">
-            <h2>记录步骤</h2>
-            <span id="stepCount">0 步</span>
+    <div class="app-shell">
+      <aside class="library" aria-label="SOP 历史记录">
+        <header class="library-header">
+          <div class="brand-mark">SF</div>
+          <div>
+            <h1>SOPFlow</h1>
+            <p>本地 SOP 工作台</p>
           </div>
-          <div id="stepsEditor" class="steps-editor"></div>
-        </aside>
+        </header>
 
-        <article id="sopOutput" class="sop-output"></article>
-      </section>
-    </main>
+        <div class="library-actions">
+          <button id="refreshLibrary" type="button">刷新记录</button>
+          <label class="button-like" for="importFile">导入 JSON</label>
+          <input id="importFile" type="file" accept="application/json,.json" hidden />
+        </div>
+
+        <div id="sessionList" class="session-list"></div>
+
+        <footer class="storage-panel">
+          <span>本地存储</span>
+          <strong id="storageUsage">计算中...</strong>
+          <p id="storageWarning" hidden>存储已超过 250 MiB，请导出并清理旧记录。</p>
+        </footer>
+      </aside>
+
+      <main class="workspace">
+        <section id="emptyWorkspace" class="empty-workspace">
+          <div class="empty-icon">SF</div>
+          <h2>还没有 SOP 记录</h2>
+          <p>在网页中打开扩展并点击“开始记录”，完成后会自动进入这里。</p>
+        </section>
+
+        <div id="editorWorkspace" hidden>
+          <header class="topbar">
+            <div>
+              <p class="eyebrow">SOP WORKBENCH</p>
+              <h2 id="documentTitle">加载 SOP...</h2>
+              <p id="documentMeta" class="document-meta"></p>
+            </div>
+            <div class="actions">
+              <button id="aiButton" class="primary" type="button">AI 优化</button>
+              <button id="copyMarkdown" type="button">复制 Markdown</button>
+              <button id="printPdf" type="button">打印 / PDF</button>
+              <button id="downloadHtml" type="button">导出 HTML</button>
+              <button id="downloadJson" type="button">导出 JSON</button>
+              <button id="duplicateSession" type="button">创建副本</button>
+              <button id="deleteSession" class="danger-outline" type="button">删除</button>
+            </div>
+          </header>
+
+          <section class="meta-grid">
+            <label>SOP 标题<input id="titleInput" type="text" /></label>
+            <label>适用对象<input id="audienceInput" type="text" /></label>
+            <label>版本<input id="versionInput" type="text" /></label>
+            <label class="wide-field">AI 后端地址<input id="backendUrlInput" type="url" /></label>
+          </section>
+
+          <div id="aiStatus" class="ai-status" hidden></div>
+
+          <section class="layout">
+            <aside class="steps-panel">
+              <div class="panel-header">
+                <div><p class="eyebrow">RECORDED STEPS</p><h3>步骤编辑</h3></div>
+                <span id="stepCount">0 步</span>
+              </div>
+              <div id="stepsEditor" class="steps-editor"></div>
+            </aside>
+            <article id="sopOutput" class="sop-output"></article>
+          </section>
+        </div>
+      </main>
+    </div>
 
     <template id="stepEditorTemplate">
       <section class="step-editor">
-        <img class="step-shot" alt="" />
-        <label>
-          步骤名称
-          <input class="step-title" type="text" />
-        </label>
-        <label>
-          操作说明
-          <textarea class="step-description" rows="3"></textarea>
-        </label>
-        <label>
-          检查标准
-          <input class="step-check" type="text" />
-        </label>
+        <div class="step-shot-wrap">
+          <img class="step-shot" alt="" />
+          <div class="shot-empty">无截图</div>
+          <button class="remove-shot" type="button">删除截图</button>
+        </div>
+        <div class="step-fields">
+          <div class="step-toolbar">
+            <strong class="step-index"></strong>
+            <div>
+              <button class="move-up" type="button" title="上移">↑</button>
+              <button class="move-down" type="button" title="下移">↓</button>
+              <button class="remove-step" type="button">删除步骤</button>
+            </div>
+          </div>
+          <label>步骤名称<input class="step-title" type="text" /></label>
+          <label>操作说明<textarea class="step-description" rows="3"></textarea></label>
+          <label>检查标准<input class="step-check" type="text" /></label>
+          <label>风险提示<input class="step-risk" type="text" /></label>
+        </div>
       </section>
     </template>
 
-    <script src="dashboard.js"></script>
+    <script src="shared.js"></script>
+    <script type="module" src="dashboard.js"></script>
   </body>
 </html>

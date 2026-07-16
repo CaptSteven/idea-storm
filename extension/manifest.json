@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
   "name": "SOPFlow Recorder",
-  "description": "Record browser operations and convert them into SOP documents.",
-  "version": "0.1.1",
+  "description": "Record browser operations, redact sensitive fields, and turn them into editable SOP documents.",
+  "version": "0.2.0",
+  "minimum_chrome_version": "109",
   "action": {
     "default_title": "SOPFlow",
     "default_popup": "popup.html"
@@ -10,6 +11,6 @@
   "background": {
     "service_worker": "background.js"
   },
-  "permissions": ["activeTab", "scripting", "storage", "tabs"],
-  "host_permissions": ["<all_urls>", "http://127.0.0.1:8787/*", "http://localhost:8787/*"]
+  "permissions": ["activeTab", "scripting", "storage", "tabs", "unlimitedStorage"],
+  "host_permissions": ["<all_urls>", "http://127.0.0.1/*", "http://localhost/*"]
 }
