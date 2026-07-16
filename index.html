@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SOPFlow - 录屏转 SOP</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="项目导航">
+        <div class="brand">
+          <div class="brand-mark">SF</div>
+          <div>
+            <h1>SOPFlow</h1>
+            <p>录屏转标准流程</p>
+          </div>
+        </div>
+
+        <nav class="nav-list" aria-label="工作区">
+          <button class="nav-item active" type="button">
+            <span>●</span>
+            工作台
+          </button>
+          <button class="nav-item" type="button">
+            <span>◆</span>
+            SOP 草稿
+          </button>
+          <button class="nav-item" type="button">
+            <span>■</span>
+            导出记录
+          </button>
+        </nav>
+
+        <div class="sidebar-panel">
+          <span class="panel-label">MVP 流程</span>
+          <ol>
+            <li>开始录屏或上传视频</li>
+            <li>边操作边添加步骤</li>
+            <li>自动生成 SOP 文档</li>
+            <li>校对后导出交付</li>
+          </ol>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Screen to SOP Builder</p>
+            <h2>把一次操作，整理成可交付的标准流程</h2>
+          </div>
+          <div class="status-pill" id="recordingStatus">未录制</div>
+        </header>
+
+        <section class="workspace">
+          <section class="capture-pane" aria-labelledby="captureTitle">
+            <div class="section-header">
+              <div>
+                <p class="eyebrow">Capture</p>
+                <h3 id="captureTitle">录制素材</h3>
+              </div>
+              <div class="timer" id="timer">00:00</div>
+            </div>
+
+            <div class="preview-frame">
+              <video id="previewVideo" playsinline muted></video>
+              <div class="empty-preview" id="emptyPreview">
+                <div class="preview-icon">▣</div>
+                <p>选择屏幕录制，或上传已有操作视频</p>
+              </div>
+            </div>
+
+            <div class="button-grid">
+              <button class="primary-button" id="startRecording" type="button">
+                开始录屏
+              </button>
+              <button class="danger-button" id="stopRecording" type="button" disabled>
+                停止录制
+              </button>
+              <label class="secondary-button file-button" for="videoUpload">
+                上传视频
+                <input id="videoUpload" type="file" accept="video/*" />
+              </label>
+              <button class="secondary-button" id="clearProject" type="button">
+                清空项目
+              </button>
+            </div>
+
+            <div class="note-panel">
+              <label for="stepNote">当前步骤说明</label>
+              <textarea
+                id="stepNote"
+                rows="4"
+                placeholder="例如：打开 Shopify 后台，进入 Orders 页面，并筛选待退款订单。"
+              ></textarea>
+              <div class="note-actions">
+                <button class="primary-button" id="addStep" type="button">
+                  添加步骤截图
+                </button>
+                <button class="secondary-button" id="generateSop" type="button">
+                  生成 SOP
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <section class="editor-pane" aria-labelledby="stepsTitle">
+            <div class="section-header">
+              <div>
+                <p class="eyebrow">Steps</p>
+                <h3 id="stepsTitle">步骤草稿</h3>
+              </div>
+              <span class="count-chip" id="stepCount">0 步</span>
+            </div>
+
+            <div class="steps-list" id="stepsList" aria-live="polite">
+              <div class="empty-state">
+                <strong>还没有步骤</strong>
+                <p>录制时点击“添加步骤截图”，系统会把截图、时间点和说明加入 SOP 草稿。</p>
+              </div>
+            </div>
+          </section>
+        </section>
+
+        <section class="sop-pane" aria-labelledby="sopTitle">
+          <div class="section-header">
+            <div>
+              <p class="eyebrow">SOP Draft</p>
+              <h3 id="sopTitle">标准作业流程</h3>
+            </div>
+            <div class="export-actions">
+              <button class="secondary-button" id="copyMarkdown" type="button">
+                复制 Markdown
+              </button>
+              <button class="secondary-button" id="downloadHtml" type="button">
+                导出 HTML
+              </button>
+              <button class="secondary-button" id="downloadJson" type="button">
+                导出 JSON
+              </button>
+            </div>
+          </div>
+
+          <div class="sop-meta">
+            <label>
+              SOP 标题
+              <input id="sopTitleInput" type="text" value="客服退款处理 SOP" />
+            </label>
+            <label>
+              适用对象
+              <input id="sopAudienceInput" type="text" value="新客服、运营助理、外包团队" />
+            </label>
+            <label>
+              版本
+              <input id="sopVersionInput" type="text" value="v0.1" />
+            </label>
+          </div>
+
+          <article class="sop-output" id="sopOutput">
+            <div class="empty-state">
+              <strong>等待生成</strong>
+              <p>添加至少一个步骤后点击“生成 SOP”。生成后仍可编辑步骤说明并重新生成。</p>
+            </div>
+          </article>
+        </section>
+      </main>
+    </div>
+
+    <template id="stepTemplate">
+      <article class="step-card">
+        <div class="step-image-wrap">
+          <img class="step-image" alt="" />
+        </div>
+        <div class="step-content">
+          <div class="step-heading">
+            <span class="step-number"></span>
+            <span class="step-time"></span>
+          </div>
+          <label>
+            步骤名称
+            <input class="step-title-input" type="text" />
+          </label>
+          <label>
+            操作说明
+            <textarea class="step-desc-input" rows="3"></textarea>
+          </label>
+          <label>
+            检查标准
+            <input class="step-check-input" type="text" />
+          </label>
+          <div class="step-actions">
+            <button class="icon-button move-up" type="button" title="上移">↑</button>
+            <button class="icon-button move-down" type="button" title="下移">↓</button>
+            <button class="text-button remove-step" type="button">删除</button>
+          </div>
+        </div>
+      </article>
+    </template>
+
+    <script src="app.js"></script>
+  </body>
+</html>

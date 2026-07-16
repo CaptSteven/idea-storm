@@ -1,0 +1,10 @@
+{
+  "name": "sopflow",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "ai-server": "node server.js",
+    "ai-server:mock": "AI_MOCK=true node server.js"
+  }
+}

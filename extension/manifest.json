@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "SOPFlow Recorder",
+  "description": "Record browser operations and convert them into SOP documents.",
+  "version": "0.1.1",
+  "action": {
+    "default_title": "SOPFlow",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": ["activeTab", "scripting", "storage", "tabs"],
+  "host_permissions": ["<all_urls>", "http://127.0.0.1:8787/*", "http://localhost:8787/*"]
+}

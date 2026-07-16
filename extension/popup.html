@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SOPFlow</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main class="popup">
+      <header>
+        <div class="brand-mark">SF</div>
+        <div>
+          <h1>SOPFlow</h1>
+          <p>网页操作转 SOP</p>
+        </div>
+      </header>
+
+      <section class="status-card">
+        <span id="statusLabel">检查当前页面...</span>
+        <strong id="stepCount">0 步</strong>
+      </section>
+
+      <div class="actions">
+        <button id="startButton" class="primary" type="button">开始记录</button>
+        <button id="stopButton" class="danger" type="button" disabled>停止并生成</button>
+        <button id="openButton" type="button" disabled>打开 SOP</button>
+      </div>
+
+      <p class="hint">
+        记录期间会捕获点击、输入和页面截图。不要在含敏感信息的页面开启。
+      </p>
+    </main>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

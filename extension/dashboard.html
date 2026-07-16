@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SOPFlow 文档</title>
+    <link rel="stylesheet" href="dashboard.css" />
+  </head>
+  <body>
+    <main class="page">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">SOPFlow Document</p>
+          <h1 id="documentTitle">加载 SOP...</h1>
+        </div>
+        <div class="actions">
+          <button id="aiButton" class="primary" type="button">AI 优化 SOP</button>
+          <button id="copyMarkdown" type="button">复制 Markdown</button>
+          <button id="downloadHtml" type="button">导出 HTML</button>
+          <button id="downloadJson" type="button">导出 JSON</button>
+        </div>
+      </header>
+
+      <section class="meta-grid">
+        <label>
+          SOP 标题
+          <input id="titleInput" type="text" />
+        </label>
+        <label>
+          适用对象
+          <input id="audienceInput" type="text" value="新员工、运营人员、外包执行团队" />
+        </label>
+        <label>
+          版本
+          <input id="versionInput" type="text" value="v0.1" />
+        </label>
+        <label class="wide-field">
+          AI 后端地址
+          <input id="backendUrlInput" type="url" value="http://127.0.0.1:8787" />
+        </label>
+      </section>
+
+      <div id="aiStatus" class="ai-status" hidden></div>
+
+      <section class="layout">
+        <aside class="steps-panel">
+          <div class="panel-header">
+            <h2>记录步骤</h2>
+            <span id="stepCount">0 步</span>
+          </div>
+          <div id="stepsEditor" class="steps-editor"></div>
+        </aside>
+
+        <article id="sopOutput" class="sop-output"></article>
+      </section>
+    </main>
+
+    <template id="stepEditorTemplate">
+      <section class="step-editor">
+        <img class="step-shot" alt="" />
+        <label>
+          步骤名称
+          <input class="step-title" type="text" />
+        </label>
+        <label>
+          操作说明
+          <textarea class="step-description" rows="3"></textarea>
+        </label>
+        <label>
+          检查标准
+          <input class="step-check" type="text" />
+        </label>
+      </section>
+    </template>
+
+    <script src="dashboard.js"></script>
+  </body>
+</html>
