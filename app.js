@@ -1,518 +1,418 @@
+const STORAGE_KEY = "sopflow_demo_sessions_v2";
+const ACTIVE_KEY = "sopflow_demo_active_session";
+
+const screenshotSources = {
+  "shot-order-list": "assets/sample-order-list.png",
+  "shot-order-detail": "assets/sample-order-detail.png",
+  "shot-refund-confirm": "assets/sample-refund-confirmation.png",
+  "shot-campaign-list": "assets/sample-campaign-list.png",
+};
+
+const samples = [
+  {
+    schemaVersion: 2,
+    id: "demo-refund",
+    status: "complete",
+    title: "客服退款处理 SOP",
+    audience: "新客服、运营助理、外包团队",
+    version: "v1.2",
+    sourceUrl: "https://merchant.example.com/orders",
+    startedAt: "2026-07-16T08:20:00.000Z",
+    endedAt: "2026-07-16T08:23:10.000Z",
+    createdAt: "2026-07-16T08:20:00.000Z",
+    updatedAt: "2026-07-16T08:23:10.000Z",
+    steps: [
+      {
+        id: "refund-step-1", kind: "click", time: "00:08",
+        url: "https://merchant.example.com/orders", target: "待处理订单",
+        title: "筛选待处理退款订单",
+        description: "在订单列表中将状态切换为“退款待处理”，并打开最早提交的订单。",
+        check: "确认列表仅显示待处理退款订单，且订单编号与工单一致。",
+        risk: "不要在筛选条件未生效时批量操作。", screenshotId: "shot-order-list",
+      },
+      {
+        id: "refund-step-2", kind: "click", time: "00:42",
+        url: "https://merchant.example.com/orders/10482", target: "订单详情",
+        title: "核对订单与退款原因",
+        description: "核对订单金额、支付状态、退款原因和客户提交的凭证。",
+        check: "订单金额、客户信息与退款工单一致，付款状态为已支付。",
+        risk: "客户联系方式属于敏感信息，不应出现在导出文档中。", screenshotId: "shot-order-detail",
+      },
+      {
+        id: "refund-step-3", kind: "submit", time: "02:31",
+        url: "https://merchant.example.com/orders/10482/refund", target: "确认退款",
+        title: "提交退款并记录结果",
+        description: "确认退款金额后提交申请，将系统生成的退款编号回填到客服工单。",
+        check: "页面显示退款已提交，并产生唯一退款编号。",
+        risk: "提交后不要重复点击；状态未更新时先刷新核对。", screenshotId: "shot-refund-confirm",
+      },
+    ],
+  },
+  {
+    schemaVersion: 2,
+    id: "demo-campaign",
+    status: "complete",
+    title: "促销活动下线检查",
+    audience: "电商运营、值班负责人",
+    version: "v0.3",
+    sourceUrl: "https://merchant.example.com/campaigns",
+    startedAt: "2026-07-15T12:10:00.000Z",
+    endedAt: "2026-07-15T12:12:00.000Z",
+    createdAt: "2026-07-15T12:10:00.000Z",
+    updatedAt: "2026-07-15T12:12:00.000Z",
+    steps: [
+      {
+        id: "campaign-step-1", kind: "click", time: "00:12",
+        url: "https://merchant.example.com/campaigns", target: "活动列表",
+        title: "定位到期活动",
+        description: "按结束时间排序，定位当天到期且仍处于启用状态的活动。",
+        check: "活动名称、渠道和结束时间与排期表一致。",
+        risk: "确认活动不属于延期名单。", screenshotId: "shot-campaign-list",
+      },
+      {
+        id: "campaign-step-2", kind: "submit", time: "01:08",
+        url: "https://merchant.example.com/campaigns/summer-sale", target: "停用活动",
+        title: "停用活动并复核前台",
+        description: "停用活动后打开前台页面，确认活动标签和优惠价格已消失。",
+        check: "后台状态为已停用，前台不再展示活动权益。",
+        risk: "前台缓存可能延迟，需在无痕窗口二次核对。", screenshotId: null,
+      },
+    ],
+  },
+];
+
 const state = {
-  stream: null,
-  recorder: null,
-  chunks: [],
-  recordingStartedAt: null,
-  timerId: null,
-  videoUrl: null,
-  steps: [],
+  sessions: loadSessions(),
+  activeId: localStorage.getItem(ACTIVE_KEY),
 };
 
-const els = {
-  previewVideo: document.querySelector("#previewVideo"),
-  emptyPreview: document.querySelector("#emptyPreview"),
-  previewFrame: document.querySelector(".preview-frame"),
-  startRecording: document.querySelector("#startRecording"),
-  stopRecording: document.querySelector("#stopRecording"),
-  videoUpload: document.querySelector("#videoUpload"),
-  clearProject: document.querySelector("#clearProject"),
-  addStep: document.querySelector("#addStep"),
-  generateSop: document.querySelector("#generateSop"),
-  stepNote: document.querySelector("#stepNote"),
-  stepsList: document.querySelector("#stepsList"),
-  stepCount: document.querySelector("#stepCount"),
-  timer: document.querySelector("#timer"),
-  recordingStatus: document.querySelector("#recordingStatus"),
-  sopOutput: document.querySelector("#sopOutput"),
-  sopTitleInput: document.querySelector("#sopTitleInput"),
-  sopAudienceInput: document.querySelector("#sopAudienceInput"),
-  sopVersionInput: document.querySelector("#sopVersionInput"),
-  copyMarkdown: document.querySelector("#copyMarkdown"),
-  downloadHtml: document.querySelector("#downloadHtml"),
-  downloadJson: document.querySelector("#downloadJson"),
-  stepTemplate: document.querySelector("#stepTemplate"),
-};
+const els = Object.fromEntries([
+  "sessionList", "newCopy", "importFile", "resetDemo", "documentTitle", "documentMeta",
+  "optimizeButton", "copyMarkdown", "downloadHtml", "downloadJson", "deleteSession",
+  "titleInput", "audienceInput", "versionInput", "sourceUrl", "statusMessage", "stepCount",
+  "stepsEditor", "documentState", "sopOutput", "stepTemplate",
+].map((id) => [id, document.querySelector(`#${id}`)]));
 
-const formatTime = (seconds) => {
-  const total = Math.max(0, Math.floor(seconds || 0));
-  const mins = String(Math.floor(total / 60)).padStart(2, "0");
-  const secs = String(total % 60).padStart(2, "0");
-  return `${mins}:${secs}`;
-};
+if (!state.sessions.some((session) => session.id === state.activeId)) state.activeId = state.sessions[0]?.id;
 
-const getElapsedSeconds = () => {
-  if (!state.recordingStartedAt) {
-    return els.previewVideo.currentTime || 0;
-  }
+function clone(value) {
+  return structuredClone(value);
+}
 
-  return (Date.now() - state.recordingStartedAt) / 1000;
-};
-
-const setStatus = (text, recording = false) => {
-  els.recordingStatus.textContent = text;
-  els.recordingStatus.classList.toggle("recording", recording);
-};
-
-const setVideoSource = (url, live = false) => {
-  if (state.videoUrl) {
-    URL.revokeObjectURL(state.videoUrl);
-    state.videoUrl = null;
-  }
-
-  if (typeof url === "string") {
-    state.videoUrl = url;
-    els.previewVideo.srcObject = null;
-    els.previewVideo.src = url;
-  }
-
-  els.previewVideo.muted = live;
-  els.previewVideo.controls = !live;
-  els.previewFrame.classList.add("has-video");
-  els.emptyPreview.hidden = true;
-};
-
-const startTimer = () => {
-  stopTimer();
-  state.timerId = window.setInterval(() => {
-    els.timer.textContent = formatTime(getElapsedSeconds());
-  }, 250);
-};
-
-const stopTimer = () => {
-  if (state.timerId) {
-    window.clearInterval(state.timerId);
-    state.timerId = null;
-  }
-};
-
-const startRecording = async () => {
-  if (!navigator.mediaDevices?.getDisplayMedia) {
-    alert("当前浏览器不支持屏幕录制。请使用 Chrome、Edge 或 Safari 新版本。");
-    return;
-  }
-
+function loadSessions() {
   try {
-    const stream = await navigator.mediaDevices.getDisplayMedia({
-      video: { frameRate: 12 },
-      audio: false,
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    if (Array.isArray(saved) && saved.length) return saved.map(SOPFlowShared.normalizeSession);
+  } catch {
+    localStorage.removeItem(STORAGE_KEY);
+  }
+  return clone(samples).map(SOPFlowShared.normalizeSession);
+}
+
+function activeSession() {
+  return state.sessions.find((session) => session.id === state.activeId) || null;
+}
+
+function persist(message = "已保存") {
+  const session = activeSession();
+  if (session) session.updatedAt = new Date().toISOString();
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.sessions));
+  localStorage.setItem(ACTIVE_KEY, state.activeId || "");
+  els.documentState.textContent = message;
+}
+
+function formatDate(value) {
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function setStatus(message, kind = "") {
+  els.statusMessage.hidden = !message;
+  els.statusMessage.textContent = message;
+  els.statusMessage.className = `status-message ${kind}`.trim();
+}
+
+function imageFor(step) {
+  return step.screenshotId ? screenshotSources[step.screenshotId] || "" : "";
+}
+
+function aiStepFor(session, step) {
+  return session.aiSop?.steps?.find((item) => item.sourceStepId === step.id) || {};
+}
+
+function render() {
+  const session = activeSession();
+  renderLibrary();
+  if (!session) return;
+  els.documentTitle.textContent = session.title;
+  els.documentMeta.textContent = `${session.sourceHost} · ${session.steps.length} 步 · 更新于 ${formatDate(session.updatedAt)}`;
+  els.titleInput.value = session.title;
+  els.audienceInput.value = session.audience;
+  els.versionInput.value = session.version;
+  els.sourceUrl.textContent = session.sourceUrl;
+  els.sourceUrl.href = session.sourceUrl;
+  els.stepCount.textContent = `${session.steps.length} 步`;
+  renderEditors(session);
+  renderPreview(session);
+}
+
+function renderLibrary() {
+  els.sessionList.innerHTML = "";
+  for (const session of state.sessions) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `session-item ${session.id === state.activeId ? "active" : ""}`;
+    button.innerHTML = `<strong>${SOPFlowShared.escapeHtml(session.title)}</strong><span>${session.steps.length} 步 · ${formatDate(session.updatedAt)}</span>`;
+    button.addEventListener("click", () => {
+      state.activeId = session.id;
+      persist();
+      setStatus("");
+      render();
     });
-
-    state.stream = stream;
-    state.chunks = [];
-    state.recordingStartedAt = Date.now();
-    els.previewVideo.src = "";
-    els.previewVideo.srcObject = stream;
-    els.previewVideo.controls = false;
-    els.previewVideo.muted = true;
-    els.previewFrame.classList.add("has-video");
-    els.emptyPreview.hidden = true;
-    await els.previewVideo.play();
-
-    const recorder = new MediaRecorder(stream, { mimeType: getSupportedMimeType() });
-    state.recorder = recorder;
-
-    recorder.addEventListener("dataavailable", (event) => {
-      if (event.data.size > 0) {
-        state.chunks.push(event.data);
-      }
-    });
-
-    recorder.addEventListener("stop", handleRecordingStop);
-    stream.getVideoTracks()[0].addEventListener("ended", () => {
-      if (state.recorder?.state === "recording") {
-        state.recorder.stop();
-      }
-    });
-
-    recorder.start();
-    els.startRecording.disabled = true;
-    els.stopRecording.disabled = false;
-    setStatus("录制中", true);
-    startTimer();
-  } catch (error) {
-    console.error(error);
-    setStatus("录制取消");
+    els.sessionList.appendChild(button);
   }
-};
+}
 
-const getSupportedMimeType = () => {
-  const candidates = [
-    "video/webm;codecs=vp9",
-    "video/webm;codecs=vp8",
-    "video/webm",
-    "video/mp4",
-  ];
-
-  return candidates.find((type) => MediaRecorder.isTypeSupported(type)) || "";
-};
-
-const stopRecording = () => {
-  if (state.recorder?.state === "recording") {
-    state.recorder.stop();
-  }
-};
-
-const handleRecordingStop = () => {
-  stopTimer();
-  state.stream?.getTracks().forEach((track) => track.stop());
-  state.stream = null;
-  state.recordingStartedAt = null;
-  els.startRecording.disabled = false;
-  els.stopRecording.disabled = true;
-  setStatus("已生成录屏");
-
-  const blob = new Blob(state.chunks, {
-    type: state.chunks[0]?.type || "video/webm",
-  });
-  const url = URL.createObjectURL(blob);
-  setVideoSource(url, false);
-  els.previewVideo.play().catch(() => {});
-};
-
-const handleUpload = (event) => {
-  const [file] = event.target.files;
-  if (!file) return;
-
-  const url = URL.createObjectURL(file);
-  state.videoUrl = url;
-  els.previewVideo.srcObject = null;
-  els.previewVideo.src = url;
-  els.previewVideo.controls = true;
-  els.previewVideo.muted = false;
-  els.previewFrame.classList.add("has-video");
-  els.emptyPreview.hidden = true;
-  setStatus("已上传视频");
-};
-
-const captureFrame = () => {
-  const video = els.previewVideo;
-  const canvas = document.createElement("canvas");
-  const width = video.videoWidth || 1280;
-  const height = video.videoHeight || 720;
-  canvas.width = width;
-  canvas.height = height;
-  const context = canvas.getContext("2d");
-
-  if (video.srcObject || video.readyState >= 2) {
-    context.drawImage(video, 0, 0, width, height);
-  } else {
-    context.fillStyle = "#eef3f1";
-    context.fillRect(0, 0, width, height);
-    context.fillStyle = "#166b5b";
-    context.font = "42px sans-serif";
-    context.fillText("Step snapshot", 80, 120);
-  }
-
-  return canvas.toDataURL("image/jpeg", 0.82);
-};
-
-const inferStepTitle = (description, index) => {
-  const trimmed = description.trim();
-  if (!trimmed) return `步骤 ${index + 1}`;
-
-  const firstSentence = trimmed.split(/[。.!?\n]/)[0].trim();
-  return firstSentence.slice(0, 28) || `步骤 ${index + 1}`;
-};
-
-const addStep = () => {
-  const description = els.stepNote.value.trim();
-  const index = state.steps.length;
-  const step = {
-    id: crypto.randomUUID(),
-    title: inferStepTitle(description, index),
-    description: description || "补充该步骤的具体操作说明。",
-    check: "确认页面状态与截图一致，关键字段已保存。",
-    time: formatTime(getElapsedSeconds()),
-    image: captureFrame(),
-  };
-
-  state.steps.push(step);
-  els.stepNote.value = "";
-  renderSteps();
-  renderSop();
-};
-
-const renderSteps = () => {
-  els.stepCount.textContent = `${state.steps.length} 步`;
-  els.stepsList.innerHTML = "";
-
-  if (state.steps.length === 0) {
-    els.stepsList.innerHTML = `
-      <div class="empty-state">
-        <strong>还没有步骤</strong>
-        <p>录制时点击“添加步骤截图”，系统会把截图、时间点和说明加入 SOP 草稿。</p>
-      </div>
-    `;
-    return;
-  }
-
-  state.steps.forEach((step, index) => {
+function renderEditors(session) {
+  els.stepsEditor.innerHTML = "";
+  session.steps.forEach((step, index) => {
     const node = els.stepTemplate.content.firstElementChild.cloneNode(true);
     node.dataset.id = step.id;
-    node.querySelector(".step-image").src = step.image;
-    node.querySelector(".step-image").alt = `${step.title} 的截图`;
-    node.querySelector(".step-number").textContent = `步骤 ${index + 1}`;
-    node.querySelector(".step-time").textContent = step.time;
-    node.querySelector(".step-title-input").value = step.title;
-    node.querySelector(".step-desc-input").value = step.description;
-    node.querySelector(".step-check-input").value = step.check;
+    node.querySelector(".step-label").textContent = `步骤 ${index + 1} · ${step.time}`;
+    node.querySelector(".step-title").value = step.title;
+    node.querySelector(".step-description").value = step.description;
+    node.querySelector(".step-check").value = step.check;
+    node.querySelector(".step-risk").value = step.risk;
     node.querySelector(".move-up").disabled = index === 0;
-    node.querySelector(".move-down").disabled = index === state.steps.length - 1;
-    els.stepsList.appendChild(node);
+    node.querySelector(".move-down").disabled = index === session.steps.length - 1;
+    const image = node.querySelector(".step-image");
+    const source = imageFor(step);
+    image.hidden = !source;
+    node.querySelector(".image-empty").hidden = Boolean(source);
+    node.querySelector(".remove-image").disabled = !source;
+    if (source) {
+      image.src = source;
+      image.alt = `${step.title} 页面截图`;
+    }
+    els.stepsEditor.appendChild(node);
   });
-};
+}
 
-const updateStepFromInput = (target) => {
-  const card = target.closest(".step-card");
-  if (!card) return;
-
-  const step = state.steps.find((item) => item.id === card.dataset.id);
-  if (!step) return;
-
-  if (target.classList.contains("step-title-input")) {
-    step.title = target.value.trim() || "未命名步骤";
-  }
-
-  if (target.classList.contains("step-desc-input")) {
-    step.description = target.value.trim() || "补充该步骤的具体操作说明。";
-  }
-
-  if (target.classList.contains("step-check-input")) {
-    step.check = target.value.trim() || "确认该步骤已完成。";
-  }
-
-  renderSop();
-};
-
-const moveStep = (id, direction) => {
-  const index = state.steps.findIndex((step) => step.id === id);
-  const nextIndex = index + direction;
-  if (index < 0 || nextIndex < 0 || nextIndex >= state.steps.length) return;
-
-  const [step] = state.steps.splice(index, 1);
-  state.steps.splice(nextIndex, 0, step);
-  renderSteps();
-  renderSop();
-};
-
-const removeStep = (id) => {
-  state.steps = state.steps.filter((step) => step.id !== id);
-  renderSteps();
-  renderSop();
-};
-
-const getSopMeta = () => ({
-  title: els.sopTitleInput.value.trim() || "未命名 SOP",
-  audience: els.sopAudienceInput.value.trim() || "未指定",
-  version: els.sopVersionInput.value.trim() || "v0.1",
-  updatedAt: new Date().toLocaleString("zh-CN"),
-});
-
-const renderSop = () => {
-  if (state.steps.length === 0) {
-    els.sopOutput.innerHTML = `
-      <div class="empty-state">
-        <strong>等待生成</strong>
-        <p>添加至少一个步骤后点击“生成 SOP”。生成后仍可编辑步骤说明并重新生成。</p>
-      </div>
-    `;
-    return;
-  }
-
-  const meta = getSopMeta();
+function renderPreview(session) {
+  const ai = session.aiSop || {};
+  const prerequisites = ai.prerequisites || ["确认已登录业务系统，账号权限和工单资料准备完毕。"];
+  const exceptions = ai.exceptions || ["页面状态、权限或业务数据与记录不一致时，停止操作并联系负责人。"];
   els.sopOutput.innerHTML = `
-    <div class="sop-document">
-      <header>
-        <h4>${escapeHtml(meta.title)}</h4>
-      </header>
-      <div class="sop-summary">
-        <div class="summary-box"><span>适用对象</span><strong>${escapeHtml(meta.audience)}</strong></div>
-        <div class="summary-box"><span>版本</span><strong>${escapeHtml(meta.version)}</strong></div>
-        <div class="summary-box"><span>步骤数量</span><strong>${state.steps.length} 步</strong></div>
-      </div>
-      <section>
-        <h5>执行前检查</h5>
-        <p>确认账号权限、业务系统、参考资料和客户信息已准备完毕。执行人应按步骤顺序操作，并在异常时暂停处理。</p>
-      </section>
-      ${state.steps
-        .map(
-          (step, index) => `
-            <section class="sop-step">
-              <img src="${step.image}" alt="${escapeHtml(step.title)} 的操作截图" />
-              <div>
-                <h5>${index + 1}. ${escapeHtml(step.title)}</h5>
-                <p><strong>时间点：</strong>${escapeHtml(step.time)}</p>
-                <p>${escapeHtml(step.description)}</p>
-                <span class="checkline">检查标准：${escapeHtml(step.check)}</span>
-              </div>
-            </section>
-          `,
-        )
-        .join("")}
-      <section>
-        <h5>异常处理</h5>
-        <p>如果截图对应页面、字段、权限或结果与当前系统不一致，应停止执行并交由负责人确认后再继续。</p>
-      </section>
-      <section>
-        <h5>维护规则</h5>
-        <p>流程、系统界面或业务规则发生变化后，应重新录制关键步骤并更新该 SOP。</p>
-      </section>
-    </div>
+    <header class="document-heading">
+      <p>STANDARD OPERATING PROCEDURE</p>
+      <h2>${SOPFlowShared.escapeHtml(ai.title || session.title)}</h2>
+      <span>${SOPFlowShared.escapeHtml(ai.purpose || "将已记录的网页操作整理为可培训、可检查的标准作业流程。")}</span>
+    </header>
+    <section class="summary-grid">
+      <div><span>适用对象</span><strong>${SOPFlowShared.escapeHtml(ai.audience || session.audience)}</strong></div>
+      <div><span>版本</span><strong>${SOPFlowShared.escapeHtml(session.version)}</strong></div>
+      <div><span>步骤</span><strong>${session.steps.length} 步</strong></div>
+      <div><span>来源</span><strong>${SOPFlowShared.escapeHtml(session.sourceHost)}</strong></div>
+    </section>
+    <section class="document-section"><h3>执行前检查</h3><ul>${prerequisites.map((item) => `<li>${SOPFlowShared.escapeHtml(item)}</li>`).join("")}</ul></section>
+    ${session.steps.map((step, index) => {
+      const optimized = aiStepFor(session, step);
+      const source = imageFor(step);
+      return `<section class="document-step">
+        ${source ? `<img src="${source}" alt="${SOPFlowShared.escapeHtml(step.title)} 截图">` : '<div class="document-image-empty">无截图</div>'}
+        <div>
+          <p class="step-kicker">步骤 ${index + 1} · ${SOPFlowShared.escapeHtml(step.time)}</p>
+          <h3>${SOPFlowShared.escapeHtml(optimized.title || step.title)}</h3>
+          <p>${SOPFlowShared.escapeHtml(optimized.description || step.description)}</p>
+          <span class="check-line">检查标准：${SOPFlowShared.escapeHtml(optimized.check || step.check)}</span>
+          ${(step.risk || optimized.risk) ? `<span class="risk-line">风险提示：${SOPFlowShared.escapeHtml(step.risk || optimized.risk)}</span>` : ""}
+        </div>
+      </section>`;
+    }).join("")}
+    <section class="document-section"><h3>异常处理</h3><ul>${exceptions.map((item) => `<li>${SOPFlowShared.escapeHtml(item)}</li>`).join("")}</ul></section>
   `;
-};
+}
 
-const escapeHtml = (value) =>
-  String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+function updateMetadata() {
+  const session = activeSession();
+  session.title = els.titleInput.value.trim() || "未命名 SOP";
+  session.audience = els.audienceInput.value.trim() || "未指定";
+  session.version = els.versionInput.value.trim() || "v0.1";
+  session.aiSop = null;
+  persist("编辑已保存");
+  render();
+}
 
-const buildMarkdown = () => {
-  const meta = getSopMeta();
-  const lines = [
-    `# ${meta.title}`,
-    "",
-    `- 适用对象：${meta.audience}`,
-    `- 版本：${meta.version}`,
-    `- 更新时间：${meta.updatedAt}`,
-    "",
-    "## 执行前检查",
-    "",
-    "确认账号权限、业务系统、参考资料和客户信息已准备完毕。执行人应按步骤顺序操作，并在异常时暂停处理。",
-    "",
-    "## 操作步骤",
-    "",
-  ];
+function updateStep(target) {
+  const session = activeSession();
+  const editor = target.closest(".step-editor");
+  const step = session.steps.find((item) => item.id === editor?.dataset.id);
+  if (!step) return;
+  if (target.classList.contains("step-title")) step.title = target.value.trim() || "未命名步骤";
+  if (target.classList.contains("step-description")) step.description = target.value.trim();
+  if (target.classList.contains("step-check")) step.check = target.value.trim() || "确认该步骤已完成。";
+  if (target.classList.contains("step-risk")) step.risk = target.value.trim();
+  session.aiSop = null;
+  persist("编辑已保存");
+  renderPreview(session);
+}
 
-  state.steps.forEach((step, index) => {
-    lines.push(`### ${index + 1}. ${step.title}`);
-    lines.push("");
-    lines.push(`- 时间点：${step.time}`);
-    lines.push(`- 操作说明：${step.description}`);
-    lines.push(`- 检查标准：${step.check}`);
+function moveStep(id, offset) {
+  const session = activeSession();
+  const index = session.steps.findIndex((step) => step.id === id);
+  const next = index + offset;
+  if (index < 0 || next < 0 || next >= session.steps.length) return;
+  const [step] = session.steps.splice(index, 1);
+  session.steps.splice(next, 0, step);
+  session.steps.forEach((item, order) => { item.order = order; });
+  session.aiSop = null;
+  persist("顺序已保存");
+  render();
+}
+
+function removeStep(id) {
+  const session = activeSession();
+  session.steps = session.steps.filter((step) => step.id !== id);
+  session.steps.forEach((item, order) => { item.order = order; });
+  session.aiSop = null;
+  persist("步骤已删除");
+  render();
+}
+
+function optimizeSample() {
+  const session = activeSession();
+  session.aiSop = {
+    title: `${session.title} · 优化版`,
+    purpose: "统一退款处理动作、检查标准和异常边界，降低重复提交与错误退款风险。",
+    audience: session.audience,
+    prerequisites: ["确认账号具备退款权限。", "准备订单编号、客服工单和客户凭证。"],
+    steps: session.steps.map((step) => ({
+      sourceStepId: step.id,
+      title: step.title,
+      description: step.description,
+      check: step.check,
+      risk: step.risk || "页面反馈异常时停止操作并核对业务规则。",
+    })),
+    exceptions: ["权限不足或订单状态不允许退款时，停止操作并升级给值班负责人。", "提交后未生成退款编号时，不要重复提交。"],
+  };
+  persist("优化结果已保存");
+  renderPreview(session);
+  setStatus("示例优化完成，输出步骤仍按 sourceStepId 对齐。", "success");
+}
+
+function markdownFor(session) {
+  const ai = session.aiSop || {};
+  const lines = [`# ${ai.title || session.title}`, "", `- 适用对象：${ai.audience || session.audience}`, `- 版本：${session.version}`, `- 来源：${session.sourceUrl}`, "", "## 操作步骤", ""];
+  session.steps.forEach((step, index) => {
+    const optimized = aiStepFor(session, step);
+    lines.push(`### ${index + 1}. ${optimized.title || step.title}`, "", optimized.description || step.description, "", `- 检查标准：${optimized.check || step.check}`);
+    if (step.risk || optimized.risk) lines.push(`- 风险提示：${step.risk || optimized.risk}`);
     lines.push("");
   });
-
-  lines.push("## 异常处理", "");
-  lines.push("如果截图对应页面、字段、权限或结果与当前系统不一致，应停止执行并交由负责人确认后再继续。");
-  lines.push("", "## 维护规则", "");
-  lines.push("流程、系统界面或业务规则发生变化后，应重新录制关键步骤并更新该 SOP。");
-
   return lines.join("\n");
-};
+}
 
-const copyMarkdown = async () => {
-  if (state.steps.length === 0) return;
-  await navigator.clipboard.writeText(buildMarkdown());
-  els.copyMarkdown.textContent = "已复制";
-  window.setTimeout(() => {
-    els.copyMarkdown.textContent = "复制 Markdown";
-  }, 1400);
-};
-
-const download = (filename, content, type) => {
-  const blob = new Blob([content], { type });
-  const url = URL.createObjectURL(blob);
+function download(name, content, type) {
+  const url = URL.createObjectURL(new Blob([content], { type }));
   const link = document.createElement("a");
   link.href = url;
-  link.download = filename;
+  link.download = name.replace(/[\\/:*?"<>|]/g, "-");
   link.click();
-  URL.revokeObjectURL(url);
-};
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
 
-const downloadHtml = () => {
-  if (state.steps.length === 0) return;
-  const meta = getSopMeta();
-  const html = `<!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="UTF-8" />
-  <title>${escapeHtml(meta.title)}</title>
-  <style>
-    body { font-family: system-ui, sans-serif; line-height: 1.65; margin: 40px; color: #17211f; }
-    img { max-width: 560px; width: 100%; border: 1px solid #d9e2df; border-radius: 8px; }
-    section { margin: 28px 0; }
-    .meta { color: #66736f; }
-  </style>
-</head>
-<body>
-  ${els.sopOutput.innerHTML}
-</body>
-</html>`;
-  download(`${meta.title}.html`, html, "text/html;charset=utf-8");
-};
+async function imageDataUrl(source) {
+  const blob = await (await fetch(source)).blob();
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.readAsDataURL(blob);
+  });
+}
 
-const downloadJson = () => {
-  if (state.steps.length === 0) return;
-  const meta = getSopMeta();
-  download(
-    `${meta.title}.json`,
-    JSON.stringify({ meta, steps: state.steps }, null, 2),
-    "application/json;charset=utf-8",
-  );
-};
+async function exportHtml() {
+  const cloneOutput = els.sopOutput.cloneNode(true);
+  await Promise.all([...cloneOutput.querySelectorAll("img")].map(async (image) => {
+    image.src = await imageDataUrl(image.getAttribute("src"));
+  }));
+  const session = activeSession();
+  const html = `<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width"><title>${SOPFlowShared.escapeHtml(session.title)}</title><style>body{max-width:980px;margin:40px auto;padding:0 24px;font:16px/1.65 system-ui;color:#17211f}img{width:100%;border:1px solid #d8e0de}.summary-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.summary-grid div{padding:12px;background:#f3f6f5}.summary-grid span,.step-kicker{display:block;color:#66736f;font-size:12px}.document-step{display:grid;grid-template-columns:300px 1fr;gap:20px;padding:24px 0;border-top:1px solid #d8e0de}.check-line,.risk-line{display:block;margin-top:8px;padding:8px;background:#e7f2ee}.risk-line{background:#fff4dd}@media(max-width:700px){.summary-grid,.document-step{grid-template-columns:1fr}}</style></head><body>${cloneOutput.innerHTML}</body></html>`;
+  download(`${session.title}.html`, html, "text/html;charset=utf-8");
+}
 
-const clearProject = () => {
-  stopTimer();
-  state.stream?.getTracks().forEach((track) => track.stop());
-  state.stream = null;
-  state.recorder = null;
-  state.chunks = [];
-  state.steps = [];
-  state.recordingStartedAt = null;
-  if (state.videoUrl) URL.revokeObjectURL(state.videoUrl);
-  state.videoUrl = null;
-  els.previewVideo.pause();
-  els.previewVideo.removeAttribute("src");
-  els.previewVideo.srcObject = null;
-  els.previewVideo.load();
-  els.previewFrame.classList.remove("has-video");
-  els.emptyPreview.hidden = false;
-  els.timer.textContent = "00:00";
-  els.startRecording.disabled = false;
-  els.stopRecording.disabled = true;
-  els.videoUpload.value = "";
-  setStatus("未录制");
-  renderSteps();
-  renderSop();
-};
+function createCopy() {
+  const source = activeSession();
+  const copySession = SOPFlowShared.normalizeSession({
+    ...clone(source), id: SOPFlowShared.createId(), title: `${source.title} 副本`, aiSop: null,
+    createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    steps: source.steps.map((step) => ({ ...step, id: SOPFlowShared.createId() })),
+  });
+  state.sessions.unshift(copySession);
+  state.activeId = copySession.id;
+  persist("副本已创建");
+  render();
+}
 
-els.startRecording.addEventListener("click", startRecording);
-els.stopRecording.addEventListener("click", stopRecording);
-els.videoUpload.addEventListener("change", handleUpload);
-els.clearProject.addEventListener("click", clearProject);
-els.addStep.addEventListener("click", addStep);
-els.generateSop.addEventListener("click", renderSop);
-els.copyMarkdown.addEventListener("click", copyMarkdown);
-els.downloadHtml.addEventListener("click", downloadHtml);
-els.downloadJson.addEventListener("click", downloadJson);
-
-els.stepsList.addEventListener("input", (event) => {
-  updateStepFromInput(event.target);
-});
-
-els.stepsList.addEventListener("click", (event) => {
-  const card = event.target.closest(".step-card");
-  if (!card) return;
-
-  if (event.target.classList.contains("move-up")) {
-    moveStep(card.dataset.id, -1);
-  }
-
-  if (event.target.classList.contains("move-down")) {
-    moveStep(card.dataset.id, 1);
-  }
-
-  if (event.target.classList.contains("remove-step")) {
-    removeStep(card.dataset.id);
+els.stepsEditor.addEventListener("input", (event) => updateStep(event.target));
+els.stepsEditor.addEventListener("click", (event) => {
+  const editor = event.target.closest(".step-editor");
+  if (!editor) return;
+  if (event.target.closest(".move-up")) moveStep(editor.dataset.id, -1);
+  if (event.target.closest(".move-down")) moveStep(editor.dataset.id, 1);
+  if (event.target.closest(".remove-step") && confirm("删除这个步骤？")) removeStep(editor.dataset.id);
+  if (event.target.closest(".remove-image")) {
+    const step = activeSession().steps.find((item) => item.id === editor.dataset.id);
+    step.screenshotId = null;
+    persist("截图已移除");
+    render();
   }
 });
 
-[els.sopTitleInput, els.sopAudienceInput, els.sopVersionInput].forEach((input) => {
-  input.addEventListener("input", renderSop);
+[els.titleInput, els.audienceInput, els.versionInput].forEach((input) => input.addEventListener("change", updateMetadata));
+els.optimizeButton.addEventListener("click", optimizeSample);
+els.newCopy.addEventListener("click", createCopy);
+els.copyMarkdown.addEventListener("click", async () => {
+  await navigator.clipboard.writeText(markdownFor(activeSession()));
+  setStatus("Markdown 已复制。", "success");
+});
+els.downloadHtml.addEventListener("click", exportHtml);
+els.downloadJson.addEventListener("click", () => {
+  const session = activeSession();
+  download(`${session.title}.json`, JSON.stringify({ schemaVersion: 2, exportedAt: new Date().toISOString(), session }, null, 2), "application/json;charset=utf-8");
+});
+els.deleteSession.addEventListener("click", () => {
+  const session = activeSession();
+  if (!session || !confirm(`删除“${session.title}”？`)) return;
+  state.sessions = state.sessions.filter((item) => item.id !== session.id);
+  if (!state.sessions.length) state.sessions = clone(samples).map(SOPFlowShared.normalizeSession);
+  state.activeId = state.sessions[0].id;
+  persist("记录已删除");
+  render();
+});
+els.resetDemo.addEventListener("click", () => {
+  state.sessions = clone(samples).map(SOPFlowShared.normalizeSession);
+  state.activeId = state.sessions[0].id;
+  persist("示例数据已恢复");
+  setStatus("示例数据已恢复。", "success");
+  render();
+});
+els.importFile.addEventListener("change", async (event) => {
+  const [file] = event.target.files;
+  if (!file) return;
+  try {
+    const payload = JSON.parse(await file.text());
+    const raw = payload.session || payload;
+    const imported = SOPFlowShared.normalizeSession({ ...raw, id: SOPFlowShared.createId(), aiSop: null });
+    state.sessions.unshift(imported);
+    state.activeId = imported.id;
+    persist("导入已保存");
+    render();
+  } catch (error) {
+    setStatus(`导入失败：${error.message}`, "error");
+  } finally {
+    event.target.value = "";
+  }
 });
 
-renderSteps();
-renderSop();
+render();
