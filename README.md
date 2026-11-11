@@ -1,5 +1,13 @@
 # SOPFlow
 
+> 本地优先的浏览器操作记录器：将网页步骤整理为可编辑、可导出的 SOP。
+
+**技术栈：** Chrome Manifest V3 · JavaScript · Node.js · IndexedDB
+
+**使用边界：** 步骤文本在启用真实模型时会发送至配置的服务；截图导出前仍需人工检查。
+
+---
+
 SOPFlow 是一个本地优先的 Chrome MV3 网页操作记录器。扩展把点击、输入、选择、提交和页面跳转整理为 Session v2 记录，再在本地工作台中编辑、优化和导出 SOP。
 
 ## 项目组成
@@ -39,7 +47,7 @@ npm start
 4. 选择：
 
 ```text
-/Users/wasabi/projects/Android_Project/idea风暴/extension
+<仓库根目录>/extension
 ```
 
 扩展会把会话和截图保存在扩展自己的 IndexedDB 中；设置和活动标签映射保存在 `chrome.storage.local` 中。
@@ -89,13 +97,7 @@ npm run package        # 生成 dist/sopflow-extension.zip
 
 ## 签名材料
 
-签名密钥不属于源码，也不会进入 Git 或 ZIP。Mac 上现有的历史密钥已移到：
-
-```text
-/Users/wasabi/Library/Application Support/SOPFlow/signing/extension.pem
-```
-
-文件权限应保持为 `0600`。该文件当前是 OpenSSH 私钥格式，不能默认视为 Chrome 扩展签名密钥；使用前必须单独确认用途和格式。旧 CRX 仅作为历史产物保存，不参与当前 ZIP 打包流程。
+签名密钥不属于源码，也不会进入 Git 或扩展 ZIP；签名和分发前应自行确认密钥用途与格式。
 
 ## 已知限制
 
@@ -106,3 +108,5 @@ npm run package        # 生成 dist/sopflow-extension.zip
 - SPA 路由只覆盖 `pushState`、`replaceState` 和 `popstate`
 - 没有云同步、账号系统或团队协作能力
 - HTML 导出包含截图，JSON 导出可能较大
+
+<!-- 更新备注：YANG KAISEN，2026-11-11；改写与核对依据见工作区变更记录。 -->
